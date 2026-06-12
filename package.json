@@ -7,11 +7,13 @@
     "start": "node index.js"
   },
   "dependencies": {
+    "@discordjs/opus": "latest",
     "@discordjs/voice": "latest",
     "@snazzah/davey": "latest",
     "discord.js": "latest",
     "ffmpeg-static": "^5.2.0",
     "libsodium-wrappers": "^0.7.13",
+    "opusscript": "latest",
     "play-dl": "^1.9.7",
     "sodium-native": "latest"
   }
