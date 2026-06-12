@@ -4,11 +4,14 @@ const play = require('play-dl');
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates] });
 
-// The Alliance Taverns Ambience
-const YOUTUBE_URL = 'https://www.youtube.com/watch?v=Oeo2VCCtUZQ';
+// Your specific SoundCloud Playlist
+const SOUNDCLOUD_PLAYLIST = 'https://soundcloud.com/retakectrl/sets/hthn';
+
+let playlistTracks = [];
+let currentTrackIndex = 0;
 
 client.once('ready', async () => {
-    console.log(`Logged in as ${client.user.tag}! Ready to set the mood.`);
+    console.log(`Logged in as ${client.user.tag}! Loading the HTHN playlist...`);
     
     const channel = client.channels.cache.get(process.env.VOICE_CHANNEL_ID);
     if (!channel) return console.error("Voice channel not found! Check your VOICE_CHANNEL_ID.");
@@ -23,39 +26,73 @@ client.once('ready', async () => {
         behaviors: { noSubscriber: NoSubscriberBehavior.Play },
     });
 
-    const playMusic = async () => {
+    // Function to fetch the playlist tracks
+    const fetchPlaylist = async () => {
         try {
-            const stream = await play.stream(YOUTUBE_URL);
+            console.log("Fetching playlist data...");
+            const playlist = await play.soundcloud(SOUNDCLOUD_PLAYLIST);
+            playlistTracks = await playlist.all_tracks();
+            console.log(`Loaded ${playlistTracks.length} tracks.`);
+            return true;
+        } catch (error) {
+            console.error("Error fetching playlist:", error);
+            return false;
+        }
+    };
+
+    // Function to play the current track
+    const playNextTrack = async () => {
+        // If the playlist is empty or we hit the end, refetch to catch any new additions you've made, then reset the index
+        if (playlistTracks.length === 0 || currentTrackIndex >= playlistTracks.length) {
+            console.log("End of playlist reached or playlist empty. Refreshing playlist...");
+            const success = await fetchPlaylist();
+            if (!success || playlistTracks.length === 0) {
+                 setTimeout(playNextTrack, 10000); // Retry in 10s if fetching fails
+                 return;
+            }
+            currentTrackIndex = 0; // Reset to the start of the playlist
+        }
+
+        const trackToPlay = playlistTracks[currentTrackIndex];
+        
+        try {
+            console.log(`Playing track: ${trackToPlay.name}`);
+            const stream = await play.stream(trackToPlay.url);
             
-            // Enable inline volume to adjust the output
             const resource = createAudioResource(stream.stream, { 
                 inputType: stream.type,
                 inlineVolume: true 
             });
             
-            // Lock volume at 50%
-            resource.volume.setVolume(0.5);
+            resource.volume.setVolume(0.5); // Still locked at 50%
 
             player.play(resource);
             connection.subscribe(player);
-            console.log("Playing tavern ambience at 50% volume...");
+            
+            // Increment the index so the next track plays after this one
+            currentTrackIndex++;
+            
         } catch (error) {
-            console.error("Error playing stream:", error);
-            setTimeout(playMusic, 10000); 
+            console.error(`Error playing track ${trackToPlay.name}:`, error);
+            currentTrackIndex++; // Skip the broken track and move to the next
+            setTimeout(playNextTrack, 5000); 
         }
     };
 
-    // Loop the track when it finishes
+    // When a track finishes, automatically trigger the next one
     player.on(AudioPlayerStatus.Idle, () => {
-        playMusic();
+        playNextTrack();
     });
 
     player.on('error', error => {
         console.error('Audio Player Error:', error.message);
-        playMusic();
+        currentTrackIndex++; // Skip the track that caused the error
+        playNextTrack();
     });
 
-    await playMusic();
+    // Initial setup: Fetch the playlist, then start playing
+    await fetchPlaylist();
+    await playNextTrack();
 });
 
 client.login(process.env.DISCORD_TOKEN);
